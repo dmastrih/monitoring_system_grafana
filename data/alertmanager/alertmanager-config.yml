@@ -1,0 +1,39 @@
+# alertmanager.yml
+global:
+  resolve_timeout: 5m
+  http_config:
+    follow_redirects: true
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 5s
+  group_interval: 30s
+  repeat_interval: 30m
+  receiver: 'critical-alerts'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 0s
+      repeat_interval: 10m
+
+receivers:
+  - name: 'critical-alerts'
+    telegram_configs:
+      - api_url: 'https://api.telegram.org'
+        bot_token: 'bot_token'
+        chat_id: chat_id
+        send_resolved: true
+        disable_notifications: false
+        parse_mode: 'MarkdownV2'
+        message: '{{ template "telegram.default.message" . }}'
+        http_config:
+          follow_redirects: true
+    webhook_configs:
+      - url: 'http://alert-api:5002/webhook/alert'
+        send_resolved: true
+        http_config:
+          follow_redirects: true
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'

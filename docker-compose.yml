@@ -1,0 +1,210 @@
+version: "3.9"
+
+services:
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    depends_on:
+      loki:
+        condition: service_healthy
+      alertmanager:
+        condition: service_started
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_ALLOW_ORG_CREATE=false
+    volumes:
+      - ./data/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./data/grafana/provisioning/datasource/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./data/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana-storage:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - loki
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - loki
+
+  minio-mc:
+    image: minio/mc:latest
+    container_name: minio-mc
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc ls local/loki-bucket || mc mb local/loki-bucket
+      "
+    environment:
+      - MINIO_ROOT_USER
+      - MINIO_ROOT_PASSWORD
+    networks:
+      - loki
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+      - '--storage.path=/alertmanager'
+    volumes:
+      - ./data/alertmanager/alertmanager-config.yml:/etc/alertmanager/config.yml
+      - ./data/alertmanager/templates:/etc/alertmanager/templates
+    ports:
+      - "9093:9093"
+    networks:
+      - loki
+
+  loki:
+    image: grafana/loki:2.6.1
+    container_name: loki
+    restart: always
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-mc:
+        condition: service_completed_successfully
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+      - -config.expand-env=true
+    volumes:
+      - loki_storage:/loki
+      - ./data/loki/local-config.yml:/etc/loki/local-config.yaml
+      - ./data/loki/rules.yml:/etc/loki/rules/fake/rules.yml
+    ports:
+      - "3100:3100"
+    networks:
+      - loki
+
+  promtail:
+    image: grafana/promtail:2.6.1
+    container_name: promtail
+    restart: always
+    ports:
+      - "9080:9080"
+    depends_on:
+      loki:
+        condition: service_healthy
+      logs-app:
+        condition: service_healthy
+    volumes:
+      - ./data/promtail/promtail-config.yml:/etc/promtail/config.yml
+      - ./logs_app/logs:/var/log/app
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - loki
+
+  logs-app:
+    build:
+      context: ./logs_app
+      dockerfile: Dockerfile
+    container_name: logs-app
+    restart: always
+    environment:
+      - PORT=${LOGS_APP_PORT}
+      - DEBUG=${LOGS_APP_DEBUG}
+      - SECRET_KEY=${LOGS_APP_SECRET_KEY}
+    volumes:
+      - ./logs_app/logs:/app/logs
+    ports:
+      - "${LOGS_APP_PORT}:${LOGS_APP_PORT}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${LOGS_APP_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - loki
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/postgres/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - loki
+
+  alert-api:
+    build:
+      context: ./alert_api
+      dockerfile: Dockerfile
+    container_name: alert-api
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - ALERT_PORT=${ALERT_API_PORT}
+      - DEBUG=${ALERT_API_DEBUG}
+      - SECRET_KEY=${ALERT_API_SECRET_KEY}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASS=${POSTGRES_PASSWORD}
+    volumes:
+      - ./alert_api/logs:/app/logs
+    ports:
+      - "${ALERT_API_PORT}:${ALERT_API_PORT}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ALERT_API_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - loki
+
+volumes:
+  grafana-storage:
+  loki_storage:
+  minio_data:
+  postgres_data:
+
+networks:
+  loki:

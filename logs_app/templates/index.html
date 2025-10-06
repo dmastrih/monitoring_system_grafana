@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тестирование логов</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Тестирование уровней логирования</h1>
+        
+        <div class="buttons">
+            <button class="btn btn-debug" onclick="logRequest('debug')">DEBUG</button>
+            <button class="btn btn-info" onclick="logRequest('info')">INFO</button>
+            <button class="btn btn-warning" onclick="logRequest('warning')">WARNING</button>
+            <button class="btn btn-error" onclick="logRequest('error')">ERROR</button>
+            <button class="btn btn-critical" onclick="logRequest('critical')">CRITICAL</button>
+            <button class="btn btn-clear" onclick="clearLogs()">Очистить</button>
+        </div>
+        
+        <div id="logs" class="logs">
+            <div class="empty-logs">Нажмите на кнопки выше, чтобы начать тестирование</div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

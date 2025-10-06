@@ -1,0 +1,7 @@
+apiVersion: 1
+datasources:
+- access: proxy
+  isDefault: true
+  name: loki-main
+  type: loki
+  url: http://loki:3100

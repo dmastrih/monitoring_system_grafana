@@ -1,0 +1,16 @@
+groups:
+  - name: critical-logs
+    interval: 5s
+    rules:
+      - alert: CriticalLogDetected
+        expr: rate({job="logs-app", level="CRITICAL"}[1m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          service: logs-app
+          alertname: CriticalLogDetected
+        annotations:
+          summary: "Критическая ошибка в логах приложения"
+          description: "Обнаружен критический лог в приложении logs-app. Уровень: {{ $labels.level }}"
+          runbook_url: "http://localhost:3000/d/logs-dashboard"
+          dashboard_url: "http://localhost:3000/d/logs-dashboard"

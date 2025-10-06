@@ -1,0 +1,18 @@
+{{ define "telegram.default.message" }}
+*КРИТИЧЕСКАЯ ОШИБКА*
+
+{{ range .Alerts }}
+*Сервис:* {{ .Labels.service | reReplaceAll "([_*[\\]()~`>#+=|{}.!-])" "\\$1" }}
+*Алерт:* {{ .Labels.alertname | reReplaceAll "([_*[\\]()~`>#+=|{}.!-])" "\\$1" }}
+*Время:* {{ .StartsAt.Format "2006\\-01\\-02 15:04:05" }}
+*Статус:* {{ .Status | reReplaceAll "([_*[\\]()~`>#+=|{}.!-])" "\\$1" }}
+
+{{ .Annotations.summary | reReplaceAll "([_*[\\]()~`>#+=|{}.!-])" "\\$1" }}
+
+{{ .Annotations.description | reReplaceAll "([_*[\\]()~`>#+=|{}.!-])" "\\$1" }}
+
+{{ if .Annotations.dashboard_url }}
+[Дашборд]({{ .Annotations.dashboard_url }})
+{{ end }}
+{{ end }}
+{{ end }}
